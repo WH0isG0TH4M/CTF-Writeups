@@ -4,4 +4,5 @@ Want to become part of Anonymous? They have a challenge for you. Can you get the
 Task 1: Prove Yourself
 
 I started by scanning for open ports using nmap -sC -sV <TARGET_IP> and discovered two open ports: 22 (SSH) and 80 (HTTP). The scan also revealed a hidden directory named /zYdHuAKjP/
+<img width="762" height="323" alt="Image" src="https://github.com/user-attachments/assets/0e86f295-3bc0-4342-b2eb-04d51ae92ed9" />
 
