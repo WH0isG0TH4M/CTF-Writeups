@@ -10,7 +10,7 @@ This suggests that the application may contain an **IDOR (Insecure Direct Object
 
 ---
 
-## Accessing the Application
+## 🌐 Accessing the Application
 
 The web application is accessible at:
 
