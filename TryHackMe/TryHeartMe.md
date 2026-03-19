@@ -1,5 +1,7 @@
 # Room: TryHeartMe
+
 Challenge Category: Web Exploitation
+
 Objective: Purchase the hidden "Valenflag" item from the Valentine's gift shop.
 
 ## Initial Reconnaissance
@@ -16,7 +18,7 @@ I identified a cookie named tryheartme_jwt. After decoding the token, I observed
   "credits": 0
 }
 ```
-3. Exploitation (JWT Manipulation)
+## Exploitation (JWT Manipulation)
 The application appeared to trust the client-side JWT claims without proper server-side verification (or used a weak/none signature algorithm).
 
 # Steps taken:
